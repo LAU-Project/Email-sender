@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lau-project-mail"
+version = "0.1.0"
+description = "Generate (or write) and send emails using an LLM"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "LAU Project" }]
+dependencies = [
+    "ollama",
+]
+
+[project.urls]
+Homepage = "https://github.com/LAU-Project/Email-sender"
