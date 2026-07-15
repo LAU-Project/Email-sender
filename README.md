@@ -9,17 +9,19 @@ You'll need:
 - application password (can be create in the gmail account)
 - python (works on 3.12.3)
 
-# Installation
+# Installation of the custom lib
 
 ```bash
-chmod 755 ./init.sh
-./init.sh
+pip install lau-project-mail
 ```
 
-# Run the program
+# Utilisation
 
-```bash
-./run.sh
+```python
+from lau-project-mail import Mail
+
+variable = Mail(prompt, model)
+# ....
 ```
 
 # Usage examples
