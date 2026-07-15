@@ -4,106 +4,87 @@ from email.mime.multipart import MIMEMultipart
 
 from ollama import chat
 
+
+class MailError(Exception):
+    """Base exception for all Mail-related errors."""
+    pass
+
+
+class MissingFieldError(MailError):
+    """Raised when a required field is missing before an operation."""
+    pass
+
+
+class GenerationError(MailError):
+    """Raised when the LLM fails to generate a valid mail."""
+    pass
+
+
+class SendError(MailError):
+    """Raised when sending the email fails."""
+    pass
+
+
 class Mail:
-    def __init__(self, prompt:str, model:str) -> None:
-        """
-        INPUT: 
-        - prompt: the prompt for the llm
-        - model: the llm model to use
-        \n
-        OUTPUT:
-        - None
-        \n
-        The constructor of the Mail class. This class generate and send mail with a llm.
-        """
+    def __init__(self, prompt: str, model: str) -> None:
         self.prompt = prompt
         self.model = model
         self.message = MIMEMultipart()
-        
+
         self.context = None
-    
+
         self.sender = None
         self.recipient = None
         self.subject = None
         self.body = None
+        self.password = None
 
-    def set_recipient(self, recipient:str, debug=False) -> None:
-        """
-        INPUT:
-        - recipient: the email to sent the mail
-        - debug: default to False, if true the method will display some text
-        \n
-        OUTPUT:
-        - None
-        \n
-        This method will set the recipient of the mail.
-        """
+    def set_recipient(self, recipient: str, debug=False) -> None:
+        if not recipient:
+            raise ValueError("recipient must be a non-empty string")
         self.recipient = recipient
         self.message["To"] = self.recipient
-        if (debug is True):
+        if debug:
             print(f"set_recipient: The recipient of the mail is set to {self.recipient}")
 
-    def set_sender(self, sender:str, password:str, debug=False) -> None:
-        """
-        INPUT:
-        - sender: the email to connect and send the mail (have to be a gmail for the moment)
-        - password: the password for application for this email
-        - debug: default to False, if true the method will display some text
-        \n
-        OUTPUT:
-        - None
-        \n
-        This method will set the senderof the mail and it's password.
-        """
+    def set_sender(self, sender: str, password: str, debug=False) -> None:
+        if not sender or not password:
+            raise ValueError("sender and password must be non-empty strings")
         self.sender = sender
         self.password = password
         self.message["From"] = self.sender
-        if (debug is True):
+        if debug:
             print(f"set_sender: The sender of the mail is set to {self.sender}")
 
-    def set_context(self, context:str, mail_subject:str, debug=False) -> None:
-        """
-        INPUT:
-        - context: the context use for generating the complete mail
-        - mail_subject: the possible subject of the mail
-        - debug: default to False, if true the method will display some text
-        \n
-        OUTPUT:
-        - None
-        \n
-        This method will set the context and a mail subject use for the generation of the mail.
-        """
+    def set_context(self, context: str, mail_subject: str, debug=False) -> None:
+        if not context:
+            raise ValueError("context must be a non-empty string")
         self.context = context
         self.mail_suject = mail_subject
-        if (debug is True):
+        if debug:
             print(f"set_context: The subject context of the mail is set to {self.mail_suject}")
             print(f"set_context: The context of the mail is set to {self.context}")
 
     def generate(self, debug=False) -> None:
-        """
-        INPUT:
-        - debug: default to False, if true the method will display some text
-        \n
-        OUTPUT:
-        - None
-        \n
-        This method will generate the mail with the previously given informations.
-        """
-        if (self.context is None):
-            print("generate: no context given, use set_context method")
-            return
-        if (self.recipient is None):
-            print("generate: no recipient given, use set_recipient method")
-            return
-        if (self.sender is None):
-            print("generate: no sender given, use set_sender method")
-            return
+        if self.context is None:
+            raise MissingFieldError("no context given, use set_context method")
+        if self.recipient is None:
+            raise MissingFieldError("no recipient given, use set_recipient method")
+        if self.sender is None:
+            raise MissingFieldError("no sender given, use set_sender method")
 
-        stream = chat(
-            model=self.model,
-            messages=[{"role":"user", "content":self.prompt + self.context}],
-        )
-        response = stream.message.content.strip()
+        try:
+            stream = chat(
+                model=self.model,
+                messages=[{"role": "user", "content": self.prompt + self.context}],
+            )
+        except Exception as e:
+            raise GenerationError(f"LLM call failed: {e}") from e
+
+        response = stream.message.content
+        if not response or not response.strip():
+            raise GenerationError("LLM returned an empty response")
+        response = response.strip()
 
         lines = response.splitlines()
         generated_subject = ""
@@ -120,83 +101,59 @@ class Mail:
             if in_body:
                 generated_body_lines.append(line)
 
-        self.set_body("\n".join(generated_body_lines).strip(), debug)
+        body = "\n".join(generated_body_lines).strip()
+
+        if not generated_subject:
+            raise GenerationError("could not parse a subject ('Objet :') from the LLM response")
+        if not body:
+            raise GenerationError("could not parse a body from the LLM response")
+
+        self.set_body(body, debug)
         self.set_subject(generated_subject, debug)
         self.message.attach(MIMEText(self.body, "plain"))
 
-    def set_subject(self, subject:str, debug=False) -> None:
-        """
-        INPUT:
-        - subject: the subject to set for the mail
-        - debug: default to False, if true the method will display some text
-        \n
-        OUTPUT:
-        - None
-        \n
-        This method will set the subject of the mail.
-        """
+    def set_subject(self, subject: str, debug=False) -> None:
+        if not subject:
+            raise ValueError("subject must be a non-empty string")
         self.message["Subject"] = subject
         self.subject = subject
-        if (debug is True):
-            print(f"set_body: The body of the mail is set to {self.subject}")
-    
-    def set_body(self, body:str, debug=False) -> None:
-        """
-        INPUT:
-        - body: the body to set for the mail
-        - debug: default to False, if true the method will display some text
-        \n
-        OUTPUT:
-        - None
-        \n
-        This method will set the body of the mail.
-        """
+        if debug:
+            print(f"set_subject: The subject of the mail is set to {self.subject}")
+
+    def set_body(self, body: str, debug=False) -> None:
+        if not body:
+            raise ValueError("body must be a non-empty string")
         self.body = body
-        if (debug is True):
+        if debug:
             print(f"set_body: The body of the mail is set to {self.body}")
 
     def send(self) -> None:
-        """
-        INPUT:
-        - None
-        \n
-        OUTPUT:
-        - None
-        \n
-        This method will send the mail.
-        """
-        if (self.body is None):
-            print("send: you need to use the generate method before")
-            return
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
-            serveur.login(self.sender, self.password)
-            serveur.sendmail(self.sender, self.recipient, self.message.as_string())
-            print("Email envoyé.")
+        if self.body is None:
+            raise MissingFieldError("you need to use the generate method before")
+
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as serveur:
+                serveur.login(self.sender, self.password)
+                serveur.sendmail(self.sender, self.recipient, self.message.as_string())
+        except smtplib.SMTPAuthenticationError as e:
+            raise SendError(f"authentication failed for {self.sender}: {e}") from e
+        except smtplib.SMTPException as e:
+            raise SendError(f"SMTP error while sending to {self.recipient}: {e}") from e
+        except OSError as e:
+            raise SendError(f"network error while connecting to SMTP server: {e}") from e
+
+        print("Email envoyé.")
 
     def preview(self) -> None:
-        """
-        INPUT:
-        - None
-        \n
-        OUTPUT:
-        - None
-        \n
-        This method give you a preview of the mail.
-        """
-        if (self.context is None):
-            print("preview: no context given, use set_context method")
-            return
-        if (self.recipient is None):
-            print("preview: no recipient given, use set_recipient method")
-            return
-        if (self.sender is None):
-            print("preview: no sender given, use set_sender method")
-            return
-        if (self.body is None):
-            print("preview: no body generated, use generate method")
-            return
+        if self.context is None:
+            raise MissingFieldError("no context given, use set_context method")
+        if self.recipient is None:
+            raise MissingFieldError("no recipient given, use set_recipient method")
+        if self.sender is None:
+            raise MissingFieldError("no sender given, use set_sender method")
+        if self.body is None:
+            raise MissingFieldError("no body generated, use generate method")
         print(f"From: {self.sender}")
         print(f"To: {self.recipient}")
         print(f"Subject: {self.subject}")
         print(self.body)
-
